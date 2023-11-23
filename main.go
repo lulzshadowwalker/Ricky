@@ -17,6 +17,7 @@ type Player struct {
   dir MovementDirection;
   speed float32; 
   movementState MovementState;
+  weapon Weapon;
 }
 
 type MovementState int
@@ -28,7 +29,6 @@ const (
 )
 
 func NewPlayer(movingSprite rl.Texture2D, rollingSprite rl.Texture2D, slashingSprite rl.Texture2D, src rl.Rectangle, dest rl.Rectangle, pos rl.Vector2, speed float32) *Player {
-
   return &Player{
     movingSprite: movingSprite, 
     rollingSprite: rollingSprite,
@@ -41,17 +41,35 @@ func NewPlayer(movingSprite rl.Texture2D, rollingSprite rl.Texture2D, slashingSp
   }
 }
 
+
+func (p *Player) isMidAnimation() bool {
+  switch player.movementState {
+  case movementStateRolling, movementStateSlashing: return true;
+  default: return false; 
+  }
+}
+
+func (p *Player) setDirection(dir MovementDirection) {
+  if p.isMidAnimation() { return; }
+
+  if dir == movingIdle {
+    p.dir = 0;
+    return;
+  }
+
+  p.dir = p.dir | dir;
+}
+
 func (p *Player) roll() {
   player.movementState = movementStateRolling;
   // TODO, vector normalization for diagonal movement
 
   var ySpriteOffset float32;
   var vel rl.Vector2;
-  speed := 0.4 * player.speed;
+  speed := 0.6 * player.speed;
 
   switch player.dir {
-  case movingIdle: fallthrough;
-  case movingDown: 
+  case movingIdle, movingDown: 
     ySpriteOffset = 0;
     vel = rl.NewVector2(0, -speed);
   case movingDownLeft: 
@@ -83,7 +101,7 @@ func (p *Player) roll() {
 
   player.src.X = player.src.Width * float32(p.spriteFrame); 
 
-  if frameCount % 10 == 0 { 
+  if frameCount % 9 == 0 { 
     p.spriteFrame++; 
 
     // TODO, max sprite frame count should be dynamic to be asset agnositc
@@ -91,21 +109,6 @@ func (p *Player) roll() {
       player.movementState = movementStateWalking;
     }
   }
-}
-
-func (p *Player) isRolling() bool {
-  return p.movementState == movementStateRolling;
-}
-
-func (p *Player) setDirection(dir MovementDirection) {
-  if p.isRolling() { return; }
-
-  if dir == movingIdle {
-    p.dir = 0;
-    return;
-  }
-
-  p.dir = p.dir | dir;
 }
 
 func (p *Player) move() {
@@ -160,22 +163,52 @@ func (p *Player) move() {
   player.setDirection(movingIdle);
 }
 
+func (p *Player) slash() {
+  player.movementState = movementStateSlashing;
+  // TODO, vector normalization for diagonal movement
+
+  var ySpriteOffset float32;
+
+  switch player.dir {
+  case movingDownLeft: 
+    ySpriteOffset = 0;
+  case movingUpLeft, movingLeft:
+    ySpriteOffset = 1; 
+  case movingUpRight, movingUp:
+    ySpriteOffset = 2;
+  case movingDownRight, movingIdle, movingDown, movingRight:
+    ySpriteOffset = 3;
+  }
+
+  player.src.Y = player.src.Height * ySpriteOffset;
+  player.src.X = player.src.Width * float32(p.spriteFrame); 
+
+  if frameCount % 6 == 0 { 
+    p.spriteFrame++; 
+
+    // TODO, max sprite frame count should be dynamic to be asset agnositc
+    if p.spriteFrame > 3 {
+      player.movementState = movementStateWalking;
+    }
+  }
+}
+
 func (p *Player) update() {
   switch player.movementState {
-    case movementStateWalking: player.move(); 
-    case movementStateRolling: player.roll(); 
-    case movementStateSlashing: panic("unimplemented: slashing state");
-    case movementStateIdle: panic("unimplemented: idle state");
+  case movementStateWalking: player.move(); 
+  case movementStateRolling: player.roll(); 
+  case movementStateSlashing: player.slash();
+  case movementStateIdle: panic("unimplemented: idle state");
   }
 }
 
 func (p *Player) render() {
   var sprite rl.Texture2D;
   switch player.movementState {
-    case movementStateIdle: panic("unimplemented: idle state");
-    case movementStateWalking: sprite = player.movingSprite;
-    case movementStateRolling: sprite = player.rollingSprite; 
-    case movementStateSlashing: sprite = player.slashingSprite; 
+  case movementStateIdle: panic("unimplemented: idle state");
+  case movementStateWalking: sprite = player.movingSprite;
+  case movementStateRolling: sprite = player.rollingSprite; 
+  case movementStateSlashing: sprite = player.slashingSprite; 
   }
 
   rl.DrawTexturePro(sprite, player.src, player.dest, player.pos, 0, rl.RayWhite);
@@ -203,6 +236,23 @@ const (
   movingUpRight MovementDirection = movingUp | movingRight;
   movingDownRight MovementDirection = movingDown | movingRight;
 )
+
+type Weapon struct {
+  sprite rl.Texture2D;
+  spriteFrame int; 
+  src rl.Rectangle;
+  dest rl.Rectangle; 
+  pos rl.Vector2;
+}
+
+func NewWeapon(sprite rl.Texture2D, src rl.Rectangle, dest rl.Rectangle, pos rl.Vector2) *Weapon {
+  return &Weapon{
+    sprite: sprite, 
+    src: src, 
+    dest: dest, 
+    pos: pos, 
+  }
+}
 
 type Screen struct {
   Width int32;
@@ -235,6 +285,7 @@ func loadPlayer() {
   src := rl.NewRectangle(0, 0, 32, 32); 
   dest := rl.NewRectangle(0, 0, 128, 128); 
   pos := rl.NewVector2(0, 0); 
+
   player = NewPlayer(movingSprite, rollingSprite, slashingSprite, src, dest, pos, 3.5); 
 }
 
@@ -251,9 +302,14 @@ func input() {
     player.setDirection(movingRight);
   }
 
-  if rl.IsKeyPressed(rl.KeyC) && player.movementState != movementStateRolling {
+  if rl.IsKeyPressed(rl.KeyC) && !player.isMidAnimation() {
     player.resetAnimation();
     player.roll();
+  }
+
+  if rl.IsKeyPressed(rl.KeyF) && !player.isMidAnimation() {
+    player.resetAnimation();
+    player.slash();
   }
 }
 
