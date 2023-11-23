@@ -1,4 +1,4 @@
-module github.com/lulshadowwalker/raylib_playground
+module github.com/lulshadowwalker/ricky
 
 go 1.21.1
 

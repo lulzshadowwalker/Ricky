@@ -7,26 +7,104 @@ import (
 var frameCount int; 
 
 type Player struct {
-  sprite rl.Texture2D;
+  movingSprite rl.Texture2D;
+  rollingSprite rl.Texture2D;
+  slashingSprite rl.Texture2D;
   spriteFrame int; 
   src rl.Rectangle;
   dest rl.Rectangle; 
   pos rl.Vector2;
-  dir MovingDirection;
+  dir MovementDirection;
   speed float32; 
+  movementState MovementState;
 }
 
-func NewPlayer(sprite rl.Texture2D, src rl.Rectangle, dest rl.Rectangle, pos rl.Vector2, speed float32) *Player {
+type MovementState int
+const (
+  movementStateIdle MovementState = iota;
+  movementStateWalking;
+  movementStateRolling; 
+  movementStateSlashing; 
+)
+
+func NewPlayer(movingSprite rl.Texture2D, rollingSprite rl.Texture2D, slashingSprite rl.Texture2D, src rl.Rectangle, dest rl.Rectangle, pos rl.Vector2, speed float32) *Player {
+
   return &Player{
-    sprite: sprite, 
+    movingSprite: movingSprite, 
+    rollingSprite: rollingSprite,
+    slashingSprite: slashingSprite,
     src: src, 
     dest: dest, 
     pos: pos,
-    speed: speed, 
+    speed: speed,
+    movementState: movementStateWalking,
   }
 }
 
-func (p *Player) setDirection(dir MovingDirection) {
+func (p *Player) roll() {
+  player.movementState = movementStateRolling;
+  // TODO, vector normalization for diagonal movement
+
+  var ySpriteOffset float32;
+  var vel rl.Vector2;
+  speed := 0.4 * player.speed;
+
+  switch player.dir {
+  case movingIdle: fallthrough;
+  case movingDown: 
+    ySpriteOffset = 0;
+    vel = rl.NewVector2(0, -speed);
+  case movingDownLeft: 
+    ySpriteOffset = 1;
+    vel = rl.NewVector2(speed, -speed);
+  case movingLeft:
+    ySpriteOffset = 2
+    vel = rl.NewVector2(speed, 0);
+  case movingUpLeft:
+    ySpriteOffset = 3; 
+    vel = rl.NewVector2(speed, speed);
+  case movingUp:
+    ySpriteOffset = 4;
+    vel = rl.NewVector2(0, speed);
+  case movingUpRight:
+    ySpriteOffset = 5;
+    vel = rl.NewVector2(-speed, speed);
+  case movingRight:
+    ySpriteOffset = 6;
+    vel = rl.NewVector2(-speed, 0);
+  case movingDownRight:
+    ySpriteOffset = 7;
+    vel = rl.NewVector2(-speed, -speed);
+}
+
+  player.src.Y = player.src.Height * ySpriteOffset;
+  player.pos.X += vel.X; 
+  player.pos.Y += vel.Y;
+
+  player.src.X = player.src.Width * float32(p.spriteFrame); 
+
+  if frameCount % 10 == 0 { 
+    p.spriteFrame++; 
+
+    // TODO, max sprite frame count should be dynamic to be asset agnositc
+    if p.spriteFrame > 3 {
+      player.movementState = movementStateWalking;
+    }
+  }
+}
+
+func (p *Player) isRolling() bool {
+  return p.movementState == movementStateRolling;
+}
+
+func (p *Player) setDirection(dir MovementDirection) {
+  if p.isRolling() { return; }
+
+  if dir == movingIdle {
+    p.dir = 0;
+    return;
+  }
+
   p.dir = p.dir | dir;
 }
 
@@ -37,6 +115,8 @@ func (p *Player) move() {
   var vel rl.Vector2;
 
   switch player.dir {
+  case movingIdle:
+    vel = rl.NewVector2(0, 0); 
   case movingDown: 
     ySpriteOffset = 0;
     vel = rl.NewVector2(0, -player.speed);
@@ -61,7 +141,7 @@ func (p *Player) move() {
   case movingDownRight:
     ySpriteOffset = 7;
     vel = rl.NewVector2(-player.speed, -player.speed);
-  }
+}
 
   player.src.Y = player.src.Height * ySpriteOffset;
   player.pos.X += vel.X; 
@@ -76,24 +156,52 @@ func (p *Player) move() {
       p.spriteFrame = 0; 
     }
   }
+
+  player.setDirection(movingIdle);
+}
+
+func (p *Player) update() {
+  switch player.movementState {
+    case movementStateWalking: player.move(); 
+    case movementStateRolling: player.roll(); 
+    case movementStateSlashing: panic("unimplemented: slashing state");
+    case movementStateIdle: panic("unimplemented: idle state");
+  }
 }
 
 func (p *Player) render() {
-  rl.DrawTexturePro(player.sprite, player.src, player.dest, player.pos, 0, rl.RayWhite);
-  player.dir = 0;
+  var sprite rl.Texture2D;
+  switch player.movementState {
+    case movementStateIdle: panic("unimplemented: idle state");
+    case movementStateWalking: sprite = player.movingSprite;
+    case movementStateRolling: sprite = player.rollingSprite; 
+    case movementStateSlashing: sprite = player.slashingSprite; 
+  }
+
+  rl.DrawTexturePro(sprite, player.src, player.dest, player.pos, 0, rl.RayWhite);
 }
 
-type MovingDirection int;
+func (p *Player) unload() {
+  rl.UnloadTexture(p.movingSprite); 
+  rl.UnloadTexture(p.rollingSprite); 
+  rl.UnloadTexture(p.slashingSprite); 
+}
+
+func (p *Player) resetAnimation() {
+  player.spriteFrame = 0; 
+}
+
+type MovementDirection int;
 const (
-  movingIdle MovingDirection = 0b00000000;
-  movingDown MovingDirection = 0b00000001;
-  movingUp MovingDirection = 0b00000010;
-  movingLeft MovingDirection = 0b00000100;
-  movingRight MovingDirection = 0b00001000;
-  movingDownLeft MovingDirection = movingDown | movingLeft;
-  movingUpLeft MovingDirection = movingUp | movingLeft;
-  movingUpRight MovingDirection = movingUp | movingRight;
-  movingDownRight MovingDirection = movingDown | movingRight;
+  movingIdle MovementDirection = 0b0000;
+  movingDown MovementDirection = 0b0001;
+  movingUp MovementDirection = 0b0010;
+  movingLeft MovementDirection = 0b0100;
+  movingRight MovementDirection = 0b1000;
+  movingDownLeft MovementDirection = movingDown | movingLeft;
+  movingUpLeft MovementDirection = movingUp | movingLeft;
+  movingUpRight MovementDirection = movingUp | movingRight;
+  movingDownRight MovementDirection = movingDown | movingRight;
 )
 
 type Screen struct {
@@ -116,20 +224,18 @@ func start() {
 }
 
 func quit() {
-  unloadTextures(); 
+  player.unload(); 
   rl.CloseWindow();
 }
 
 func loadPlayer() {
-  sprite := rl.LoadTexture("assets/ricky/Character/ricky-moving.png");
+  movingSprite := rl.LoadTexture("assets/ricky/Character/ricky-moving.png");
+  rollingSprite := rl.LoadTexture("assets/ricky/Character/ricky-rolling-no-pun-intended.png");
+  slashingSprite := rl.LoadTexture("assets/ricky/Character/ricky-slashing.png");
   src := rl.NewRectangle(0, 0, 32, 32); 
-  dest := rl.NewRectangle(0, 0, 64, 64); 
+  dest := rl.NewRectangle(0, 0, 128, 128); 
   pos := rl.NewVector2(0, 0); 
-  player = NewPlayer(sprite, src, dest, pos, 1.4); 
-}
-
-func unloadTextures() {
-  rl.UnloadTexture(player.sprite); 
+  player = NewPlayer(movingSprite, rollingSprite, slashingSprite, src, dest, pos, 3.5); 
 }
 
 func input() {
@@ -144,20 +250,25 @@ func input() {
   } else if rl.IsKeyDown(rl.KeyD) {
     player.setDirection(movingRight);
   }
+
+  if rl.IsKeyPressed(rl.KeyC) && player.movementState != movementStateRolling {
+    player.resetAnimation();
+    player.roll();
+  }
 }
 
 func update() {
   running = !rl.WindowShouldClose(); 
-  player.move();
+  player.update(); 
 }
 
 func render() {
   rl.BeginDrawing();
-  rl.DrawText("Ricky in Town", 50, 50, 24, rl.RayWhite);
+  rl.DrawText("Ricky in Town", 50, 50, 48, rl.NewColor(252, 176, 179, 255));
 
   player.render(); 
 
-  rl.ClearBackground(rl.NewColor(30, 39, 73, 255));
+  rl.ClearBackground(rl.NewColor(252, 236, 201, 255));
   rl.EndDrawing();
 
   frameCount++; 
