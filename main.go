@@ -1,10 +1,16 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
 var frameCount int; 
+var mab Map;
 
 type Player struct {
   movingSprite rl.Texture2D;
@@ -17,7 +23,6 @@ type Player struct {
   dir MovementDirection;
   speed float32; 
   movementState MovementState;
-  weapon Weapon;
 }
 
 type MovementState int
@@ -237,23 +242,6 @@ const (
   movingDownRight MovementDirection = movingDown | movingRight;
 )
 
-type Weapon struct {
-  sprite rl.Texture2D;
-  spriteFrame int; 
-  src rl.Rectangle;
-  dest rl.Rectangle; 
-  pos rl.Vector2;
-}
-
-func NewWeapon(sprite rl.Texture2D, src rl.Rectangle, dest rl.Rectangle, pos rl.Vector2) *Weapon {
-  return &Weapon{
-    sprite: sprite, 
-    src: src, 
-    dest: dest, 
-    pos: pos, 
-  }
-}
-
 type Screen struct {
   Width int32;
   Height int32;
@@ -263,18 +251,59 @@ type Screen struct {
 var (
   player *Player; 
   running = true; 
-  screen = Screen{640, 480, "Ricky Boy"};
+  screen = Screen{20 * 48, 20 * 48, "Ricky Boy"};
 )
+
+type TileUnit int; 
+
+func loadMap() {
+  jason, err := os.ReadFile("./assets/maps/map.json");
+  if err != nil {
+    log.Fatalf("unable to load map %q", err); 
+  }
+
+  mab = Map{};
+  err = json.Unmarshal(jason, &mab);
+  if err != nil {
+    log.Fatalf("unable to decode map data %q", err); 
+  }
+
+  mab.Tile = rl.LoadTexture("./assets/maps/forest.png");
+  fmt.Println("INFO: map loaded successfully");
+}
+
+func (m *Map) render() {
+  tileSrc := rl.NewRectangle(0, 0, float32(mab.TileWidth), float32(mab.TileHeight));
+  tileDest := rl.NewRectangle(0, 0, float32(mab.TileWidth), float32(mab.TileHeight));
+
+  for i, v := range mab.Layers[0].Data {
+    if v != 0 {
+      tileDest.X = tileDest.Width * float32(i % mab.Width); 
+      tileDest.Y = tileDest.Height * float32(i / mab.Width); 
+
+      tileSrc.X = tileSrc.Width * float32((v-1) % int(mab.Tilesets[0].Columns));
+      tileSrc.Y = tileSrc.Height * float32((v-1) / int(mab.Tilesets[0].Columns));
+
+      rl.DrawTexturePro(mab.Tile, tileSrc, tileDest, rl.NewVector2(tileDest.Width, tileDest.Height), 0, rl.White);
+    }
+  }
+}
+
+func (m *Map) unload() {
+  rl.UnloadTexture(mab.Tile);
+}
 
 func start() {
   rl.InitWindow(screen.Width, screen.Height, screen.Title);
   loadPlayer();
   rl.SetExitKey(rl.KeyQ); 
   rl.SetTargetFPS(60); 
+  loadMap();
 }
 
 func quit() {
   player.unload(); 
+  mab.unload();
   rl.CloseWindow();
 }
 
@@ -320,8 +349,9 @@ func update() {
 
 func render() {
   rl.BeginDrawing();
-  rl.DrawText("Ricky in Town", 50, 50, 48, rl.NewColor(252, 176, 179, 255));
 
+  mab.render();
+  rl.DrawText("Ricky in Town", 50, 50, 48, rl.NewColor(252, 176, 179, 255));
   player.render(); 
 
   rl.ClearBackground(rl.NewColor(252, 236, 201, 255));
