@@ -10,7 +10,7 @@ import (
 )
 
 var frameCount int; 
-var mab Map;
+var mab *Map;
 
 type Player struct {
   movingSprite rl.Texture2D;
@@ -71,7 +71,7 @@ func (p *Player) roll() {
 
   var ySpriteOffset float32;
   var vel rl.Vector2;
-  speed := 0.6 * player.speed;
+  speed := 0.85 * player.speed;
 
   switch player.dir {
   case movingIdle, movingDown: 
@@ -106,7 +106,7 @@ func (p *Player) roll() {
 
   player.src.X = player.src.Width * float32(p.spriteFrame); 
 
-  if frameCount % 9 == 0 { 
+  if frameCount % 6 == 0 { 
     p.spriteFrame++; 
 
     // TODO, max sprite frame count should be dynamic to be asset agnositc
@@ -118,7 +118,6 @@ func (p *Player) roll() {
 
 func (p *Player) move() {
   // TODO, vector normalization for diagonal movement
-
   var ySpriteOffset float32;
   var vel rl.Vector2;
 
@@ -205,6 +204,8 @@ func (p *Player) update() {
   case movementStateSlashing: player.slash();
   case movementStateIdle: panic("unimplemented: idle state");
   }
+
+  player.handleCollision();
 }
 
 func (p *Player) render() {
@@ -242,6 +243,16 @@ const (
   movingDownRight MovementDirection = movingDown | movingRight;
 )
 
+var coin = rl.NewRectangle(200, 200, 50, 50); 
+var coinCollected = false;
+
+func (p *Player) handleCollision() {
+  playerBox := rl.NewRectangle(-p.pos.X, -p.pos.Y, p.dest.Width, p.dest.Height);
+  if rl.CheckCollisionRecs(playerBox, coin) {
+    coinCollected = true; 
+  } 
+}
+
 type Screen struct {
   Width int32;
   Height int32;
@@ -251,46 +262,73 @@ type Screen struct {
 var (
   player *Player; 
   running = true; 
-  screen = Screen{20 * 48, 20 * 48, "Ricky Boy"};
+  screen = Screen{25 * 48, 25 * 48, "Ricky Boy"};
 )
 
 type TileUnit int; 
 
-func loadMap() {
-  jason, err := os.ReadFile("./assets/maps/map.json");
+func loadMap(filePath string) *Map {
+  jason, err := os.ReadFile(filePath);
   if err != nil {
     log.Fatalf("unable to load map %q", err); 
   }
 
-  mab = Map{};
-  err = json.Unmarshal(jason, &mab);
+  mab := new(Map); 
+  err = json.Unmarshal(jason, mab);
   if err != nil {
     log.Fatalf("unable to decode map data %q", err); 
   }
 
-  mab.Tile = rl.LoadTexture("./assets/maps/forest.png");
-  fmt.Println("INFO: map loaded successfully");
+  for i := range mab.Tilesets {
+    mab.Tilesets[i].Texture = rl.LoadTexture("./assets/maps/" + mab.Tilesets[i].Name + ".png"); 
+  }
+
+  fmt.Printf("INFO: map %q loaded successfully", filePath);
+
+  return mab;
 }
 
 func (m *Map) render() {
-  tileSrc := rl.NewRectangle(0, 0, float32(mab.TileWidth), float32(mab.TileHeight));
   tileDest := rl.NewRectangle(0, 0, float32(mab.TileWidth), float32(mab.TileHeight));
 
-  for i, v := range mab.Layers[0].Data {
-    if v != 0 {
-      tileDest.X = tileDest.Width * float32(i % mab.Width); 
-      tileDest.Y = tileDest.Height * float32(i / mab.Width); 
+  for _, layer := range m.Layers {
+    for i, v := range layer.Data {
+      if v != 0 {
 
-      tileSrc.X = tileSrc.Width * float32((v-1) % int(mab.Tilesets[0].Columns));
-      tileSrc.Y = tileSrc.Height * float32((v-1) / int(mab.Tilesets[0].Columns));
+        var ts Tileset;
+        for j := range mab.Tilesets {
+          if v >= mab.Tilesets[j].FirstGID {
+            if j + 1 == len(mab.Tilesets) {
+              ts = mab.Tilesets[j];
+              break;
+            } 
 
-      rl.DrawTexturePro(mab.Tile, tileSrc, tileDest, rl.NewVector2(tileDest.Width, tileDest.Height), 0, rl.White);
+            if v < mab.Tilesets[j+1].FirstGID {
+              ts = mab.Tilesets[j];
+              break;
+            }
+          }
+        }
+
+        tileSrc := rl.NewRectangle(float32(ts.Margin), float32(ts.Margin), float32(ts.TileWidth), float32(ts.TileHeight));
+
+        tileDest.X = tileDest.Width * float32(i % mab.Width); 
+        tileDest.Y = tileDest.Height * float32(i / mab.Width); 
+
+        tileSrc.X = tileSrc.Width * float32((v-ts.FirstGID) % int(ts.Columns)) + float32(ts.Spacing);
+        tileSrc.Y = tileSrc.Height * float32((v-ts.FirstGID) / int(ts.Columns)) + float32(ts.Spacing);
+
+        log.Println(ts.Name, ts.Columns, tileSrc, tileDest)
+        rl.DrawTexturePro(ts.Texture, tileSrc, tileDest, rl.NewVector2(tileDest.Width, tileDest.Height), 0, rl.White);
+      }
     }
   }
 }
 
 func (m *Map) unload() {
-  rl.UnloadTexture(mab.Tile);
+  for _, tileset := range mab.Tilesets {
+    rl.UnloadTexture(tileset.Texture); 
+  }
 }
 
 func start() {
@@ -298,7 +336,7 @@ func start() {
   loadPlayer();
   rl.SetExitKey(rl.KeyQ); 
   rl.SetTargetFPS(60); 
-  loadMap();
+  mab = loadMap("./assets/maps/map.json");
 }
 
 func quit() {
@@ -352,6 +390,11 @@ func render() {
 
   mab.render();
   rl.DrawText("Ricky in Town", 50, 50, 48, rl.NewColor(252, 176, 179, 255));
+
+  if !coinCollected {
+    rl.DrawRectangle(coin.ToInt32().X, coin.ToInt32().Y, coin.ToInt32().Width, coin.ToInt32().Height, rl.Yellow);
+  }
+
   player.render(); 
 
   rl.ClearBackground(rl.NewColor(252, 236, 201, 255));

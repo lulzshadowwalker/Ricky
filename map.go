@@ -16,6 +16,7 @@ type Layer struct {
 }
 
 type Tileset struct {
+	Texture     rl.Texture2D
 	Columns     int    `json:"columns"`
 	FirstGID    int    `json:"firstgid"`
 	Image       string `json:"image"`
@@ -30,7 +31,6 @@ type Tileset struct {
 }
 
 type Map struct {
-	Tile             rl.Texture2D
 	CompressionLevel int       `json:"compressionlevel"`
 	Height           int       `json:"height"`
 	Infinite         bool      `json:"infinite"`
